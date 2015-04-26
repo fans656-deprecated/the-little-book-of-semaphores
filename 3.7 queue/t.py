@@ -2,25 +2,6 @@ from threading import Semaphore, Thread
 import threading
 import time
 
-class Barrier(object):
-
-    def __init__(self, nThread=2):
-        self.nThread = nThread
-        self.nArrive = 0
-        self.nArrive_lock = Semaphore(1)
-        self.allArrive = Semaphore(0)
-
-    def wait(self):
-        self.nArrive_lock.acquire()
-        self.nArrive += 1
-        self.nArrive_lock.release()
-        if self.nArrive == self.nThread:
-            self.nArrive = 0
-            for _ in range(self.nThread - 1):
-                self.allArrive.release()
-        else:
-            self.allArrive.acquire()
-
 class Group(object):
 
     def __init__(self, nMember=2):
