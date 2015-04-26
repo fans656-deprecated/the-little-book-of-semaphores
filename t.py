@@ -2,38 +2,59 @@ from threading import Semaphore, Thread
 from Queue import Queue
 import threading
 import time
+import random
 
-class FIFO(object):
+q = Queue()
 
-    def __init__(self):
-        self.queue = Queue()
-        self.lock = Semaphore(1)
+def put(o):
+    global q
+    q.put(o)
 
-    def wait(self):
-        s = Semaphore(0)
-        self.lock.acquire()
-        self.queue.put(s)
-        self.lock.release()
-        s.acquire()
+writing = False
+writing_lock = Semaphore(1)
+operatings = 0
+operatings_lock = Semaphore(1)
+operating_finished = Semaphore(0)
 
-    def signal(self):
-        self.lock.acquire()
-        s = self.queue.get()
-        self.lock.release()
-        s.release()
+def writer():
+    operatings_lock.acquire()
+    while operatings:
+        operatings_lock.release()
+        operating_finished.acquire()
+        operatings_lock.acquire()
+    writing_lock.acquire()
+    writing = True
+    writing_lock.release()
+    put('WBeg')
+    operatings_lock.release()
+    put('write')
+    put('WEnd')
+    writing_lock.acquire()
+    writing = False
+    writing_lock.release()
+    operating_finished.release()
 
-def f_gen(i):
-    def f():
-        fifo.wait()
-        print i
-    return f
+def reader():
+    global operatings
+    operatings_lock.acquire()
+    while writing:
+        operatings_lock.release()
+        operating_finished.acquire()
+        operatings_lock.acquire()
+    operatings += 1
+    operatings_lock.release()
+    put('{} beg'.format(threading.current_thread().ident))
+    put('{} read'.format(threading.current_thread().ident))
+    put('{} leave'.format(threading.current_thread().ident))
+    operatings_lock.acquire()
+    operatings -= 1
+    operatings_lock.release()
+    operating_finished.release()
 
-fifo = FIFO()
-
-fs = [f_gen(i) for i in range(5)]
-ts = [Thread(target=f) for f in fs]
+ts = [Thread(target=reader) for _ in range(5)] + [Thread(target=writer) for _ in range(3)]
+random.shuffle(ts)
 for t in ts:
     t.start()
-for _ in range(5):
-    time.sleep(0.1)
-    fifo.signal()
+
+while True:
+    print q.get()

@@ -266,3 +266,14 @@ FIFO queue，有意思，用无序的semaphore实现有序的signal，有点像i
 2015-04-26 20:20:39
 第三章看完了，下来第四章 Classical synchronization problems
 就是 consumer/producer, reader/writer 那些
+
+2015-04-26 21:07:02
+好像一对多、多对多时，consumer里只用一个wait也没问题
+
+2015-04-26 21:17:46
+producer 的 items.release 放在 lock.release 之后，可以避免对 consumer 不必要的 block —— 即 items.release 之后切换去 consumer，但 lock 仍被 producer 拿着，consumer 即使 acquire 到了 item 也没法操作 buffer，还得等切换回 producer 让它把 lock 释放掉
+这么看来python里的condition variable是不是有点瑕疵？
+
+2015-04-26 22:26:13
+记得reader/writer的同步没这么麻烦呃，还是自己记错了？反正这次写的挺麻烦
+靠event while来弄的
