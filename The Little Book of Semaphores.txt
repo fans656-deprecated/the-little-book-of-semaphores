@@ -1,0 +1,227 @@
+2015-04-23 23:07:19
+[7()]
+semaphore 的整数值的含义是：
+    -2      有2个家伙在等
+    0       都在用了(没人在等，也没妹子~)
+    3       还有三个妹子 [抖眉坏笑]
+    
+[8()]
+设想一个圆形的房间，里面是妹子们等待接客
+这个房间一周都有门外接长长的通道与嫖客们等待的前厅连接
+一个通道连接的前厅只能等一个嫖客
+嫖客等待间里有一个按钮，按一下可以知道当前有几个妹子(3个？0个？..)
+如果发现有妹子，嫖客立马冲进通道，站在妹子房间的门外等着老鸨开门
+可以想见，你看到有妹子的时候，别的两个嫖客也看到了
+你们三个都冲进去等在各自的门前
+老鸨拿一个幸运转轮转一下，指到哪个门前，她就打开那扇门，让那个幸运的嫖客来领妹子去happy
+而你呢，得可怜地继续在门前等着，直到有available的妹子
+
+require之前无法知道是否会block的原因是，你不知道你冲进走廊的时候，是否有别的嫖客也冲进了他们的走廊
+如果有，你就会block；如果没有，you're lucky
+但你无法知道~
+
+看样子好像如果你知道有2个人已经等在了门前时(显示-2)，一定会block？
+不一定，你冲进走廊到达门前的这段时间里，可能正好有3个妹子完事回到接客房间了
+同样道理，你看到显示+2时，也可能在你冲刺的时间里，她们被冲得更快的嫖客们领走了
+
+这里的关键是，至多可以把按钮询问做成一个原子操作，但冲走廊这件事，是你们嫖客们自己的事情，无法保证谁先到谁后到
+
+2015-04-24 09:20:55
+[8()]
+"In general, there is no way to know before a thread decrements a semaphore whether it will block or not."
+初看之下，怎么会不能提前知道呢？semaphore内在不就是个整数吗？我wait()之前get()一下不就知道了？
+我们看下面的语句：
+
+    while s.get() <= 0:
+        s.wait()
+    # 有妹子!
+    
+但是设想这样的thread执行：
+
+                    s = Semaphore(1)
+    # Thead A                       # Thread B
+    while s.get() <= 0:     |
+        s.wait()            |
+                            |       s.wait()
+                            |       # 有妹子！
+    # 还有妹子吗?           |
+    
+以及：
+
+                    s = Semaphore(1)
+    # Thead A                       # Thread B
+    while s.get() <= 0:     |
+        s.wait()            |
+    # 确实有妹子            |
+                            |       s.wait()
+                            
+所以总的来说，你无法知道
+这里的关键是，原子操作(.get, .wait)之外，所有线程间语句的执行是non-deterministic的
+
+2015-04-24 10:17:41
+推广了一下 Rendezvous pattern:
+
+    from threading import Thread, Semaphore
+    import threading
+    import time
+    import random
+
+    class Rendezvous(object):
+
+        def __init__(self, nThreads=2):
+            self.__nThreads = nThreads
+            self.__semaphores = [[Semaphore(0), None] for _ in range(nThreads)]
+
+        def waitOthers(self):
+            me = threading.current_thread().ident
+            for i, (s, owner) in enumerate(self.__semaphores):
+                if owner is None:
+                    self.__semaphores[i][1] = me
+                    for _ in range(self.__nThreads - 1):
+                        s.release()
+                    break
+            else:
+                msg = 'More threads wait on a {}-ary Rendezvous'.format(
+                        self.__nThreads
+                        )
+                raise RuntimeError(msg)
+            for s, owner in self.__semaphores:
+                if owner == me:
+                    continue
+                s.acquire()
+
+    r = Rendezvous(3)
+
+    def a():
+        print 'a1'
+        r.waitOthers()
+        print 'a2'
+
+    def b():
+        print 'b1'
+        r.waitOthers()
+        print 'b2'
+
+    def c():
+        print 'c1'
+        r.waitOthers()
+        print 'c2'
+
+    fs = [a, b, c]
+    random.shuffle(fs)
+    for t in [Thread(target=f) for f in fs]:
+        t.start()
+        
+
+rendezvous 必须预先知道有几个thread
+就像同学聚会，大家商量好人到齐了才开饭，那么必须预先知道有几个人，否则到底来几个人后开饭呢？
+
+2015-04-24 10:28:33
+[16()]
+哈，这里也提到《The Lord of the Flies》，说里面的海螺相当于一个mutex
+
+2015-04-24 11:08:58
+重写 n-ary rendezvous:
+
+    class Rendezvous(object):
+
+        def __init__(self, nThreads=2):
+            self.__nThreads = nThreads
+            self.__nArrived = 0
+            self.__nArrived_lock = Semaphore(1)
+            self.__allArrived = Semaphore(0)
+
+        def waitOthers(self):
+            self.__nArrived_lock.acquire()
+            self.__nArrived += 1
+            self.__nArrived_lock.release()
+            if self.__nArrived == self.__nThreads:
+                for _ in range(self.__nThreads - 1):
+                    self.__allArrived.release()
+            else:
+                self.__allArrived.acquire()
+
+这里的逻辑是，最后一个人才会看到 nArrived == nThreads，然后放行其他人，他自己直接放行不需要通过semaphore
+也可以每个inc后都告诉其他人有一个人到了，但这样会多执行很多for
+ps: allArrived 更应该叫做 allArrivedCalls ，表示都到了这个消息通过电话通知给其他人
+
+
+[29()]
+作者代码的逻辑是：最后一个人不会在wait处block(他自己signal了一次)
+然后他去signal另一个人(其他人里头任选一个)，这个人再去signal下一个
+这么一个串一个，最后一个人多signal了一次，不过这没啥影响
+
+2015-04-24 19:50:35
+[31()]
+按自己的思路来的 reusable barrier，亦即每个线程都是循环往复经过 rendezvous
+
+    ...
+    if self.__nArrived == self.__nThreads:
+        self.__nArrived = 0
+        for _ in range(self.__nThreads):
+            self.__allArrived.release()
+    ...
+    
+觉得这个思路挺清楚的，大家都到了之后，状态重置为初始，然后大家开饭
+有的人吃得快有的人吃得慢，吃的快的去下一个饭局先等着(还是同一拨人的饭局)
+对于这些人(吃得快的)，他们看到的 Rendezvous 的状态跟初始是一样的
+
+2015-04-24 21:38:09
+[31()]
+呃，对 reusable barrier 的理解有误(感觉你妹这也是你作者没说明白啊)
+其实应该是，critical point 后面也有一个 rendezvous
+可以推广理解成，n个线程各自的代码被划分成一些块，所有线程中编号为1的块执行完要synchronize，然后继续，编号为2的块执行完也要synchronize，编号为3的... 以此类推
+
+然后是，可以用一个queue来做test，每个线程往queue里放"a1", "b2"这样的token表示某一句被执行过了
+完了主线程检查queue里的内容，确保满足一定的规则，比如 "a1 b1 c1 b2 a2 c2"
+
+
+感觉自己之前改写出的 reusable barrier 还是能用呃：
+
+    # block 1
+    rendezvous.waitOthers()
+    # block 2
+    rendezvous.waitOthers()
+    # ...
+    # block n
+    rendezvous.waitOthers()
+    
+不过还是需要测试来确认下
+
+2015-04-24 22:41:17
+擦..感觉写测试比较难，先不写了，，看书吧
+
+2015-04-24 22:50:30
+[43()]
+signal n 次的做法就跟我的很像了，，但是他还是用了(除lock外的)两个semaphore
+而我只用一个(虽然不知道自己的是否严格正确)
+
+2015-04-24 23:09:30
+[45()]
+看累了，先歇了
+
+2015-04-26 15:12:04
+[49()]
+queue 跟 rendezvous 不同的地方在于
+假设现在有5个boy等在各自的门前(门后是走廊，所有走廊通向同一个房间，房间里只有一张床)
+现在两个妹子到了，她们各自signal了一个boy(同时因为她们到达时已经有足够的boy在等待，所以她们可以直接proceed)
+现在，可以进走廊的是两男两女
+要求的情况是，一男一女进房间，执行fuck，再一男一女...
+但是可能出现这样的情况，两个男的先通过走廊进了房间，执行了fuck... [吐]
+或者两个女的进了房间，执行了... 虽然[口水]，但依旧不合语义
+
+2015-04-26 15:39:29
+艹，girls 写成 [.. [b] * 2] 结果debug了半天
+
+逻辑是这样的：
+    前面到达的两类/个 semaphore 没有变化
+    给男的和女的各准备一把且只有一把房间钥匙
+    进了走廊之后，只有拿到钥匙的那个boy/girl才能进房间
+    进去之后，等另一方高潮结束自己才能离开——双方谁先高潮无所谓，但一方高潮之后必须等另一方高潮完毕 (这里的高潮就是双方要合作完成的事情)
+    离开房间交出钥匙
+    
+虽然这里看起来可能会出现一个男的先出了房间，另一个男的已经进来，而跟之前那个男的配对的妹子还没出去的情况
+但这是ok的，妹子已经高潮过了
+
+
+下来直接想想怎么generalize到n-ary分工合作
