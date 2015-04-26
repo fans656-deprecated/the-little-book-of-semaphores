@@ -248,3 +248,21 @@ wait就是等在queue里，由别人来signal自己出队
 写到这里感觉，mutex是不是担负了两个作用？既当了lock，又当了token(令牌环中的令牌)
 先到的人只用了lock这个功能——因为他反正现在没法进场，所以必须交还钥匙给后来的对方提供lock作用
 而后来的人，用了lock之后，还能当token用
+
+2015-04-26 17:04:16
+所以感觉复杂一些的同步问题要把semaphore和常规变量一起用
+哪怕semaphore的底层其实记录了+n -n等信息，一般来说我们也不能用(因为拿到之后可能变成invalid的)
+但是这个问题里，由于有mutex保护，是不是理论上可以不要常规变量而直接利用queue的信息？
+
+咦，书里说queue的值可能positive，，如果这样的话恐怕不能利用了
+哦，明白了，先到的人在wait之前已经释放了mutex，所以在他执行wait从而将queue置为负之前，另一边可能已经读到常规变量的正值从而执行了queue的signal
+这钟情况下就会queue值为正
+
+2015-04-26 20:09:57
+FIFO queue，有意思，用无序的semaphore实现有序的signal，有点像ip之上建立tcp
+
+擦.. 也就是用一个 queue 和 n 个 semaphore 就行了..
+
+2015-04-26 20:20:39
+第三章看完了，下来第四章 Classical synchronization problems
+就是 consumer/producer, reader/writer 那些

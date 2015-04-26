@@ -1,53 +1,39 @@
 from threading import Semaphore, Thread
+from Queue import Queue
 import threading
 import time
 
-nBoy = 0
-nGirl = 0
-token = Semaphore(1)
-bQueue = Semaphore(0)
-gQueue = Semaphore(0)
-gFinish = Semaphore(0)
+class FIFO(object):
 
-def a():
-    global nGirl, nBoy
-    token.acquire()
-    if nGirl > 0:
-        nGirl -= 1
-        gQueue.release()
-    else:
-        nBoy += 1
-        token.release()
-        bQueue.acquire()
-    print 'B'
-    gFinish.acquire()
-    token.release()
+    def __init__(self):
+        self.queue = Queue()
+        self.lock = Semaphore(1)
 
-def b():
-    global nGirl, nBoy
-    token.acquire()
-    if nBoy > 0:
-        nBoy -= 1
-        bQueue.release()
-    else:
-        nGirl += 1
-        token.release()
-        gQueue.acquire()
-    print 'G'
-    gFinish.release()
+    def wait(self):
+        s = Semaphore(0)
+        self.lock.acquire()
+        self.queue.put(s)
+        self.lock.release()
+        s.acquire()
 
-boys = [Thread(target=f) for f in [a] * 5]
-girls = [Thread(target=f) for f in [b] * 5]
-print '== 5 boys are waiting'
-for boy in boys:
-    boy.start()
+    def signal(self):
+        self.lock.acquire()
+        s = self.queue.get()
+        self.lock.release()
+        s.release()
 
-time.sleep(0.01)
-print '== 2 girls arriving'
-for girl in girls[:2]:
-    girl.start()
+def f_gen(i):
+    def f():
+        fifo.wait()
+        print i
+    return f
 
-time.sleep(0.01)
-print '== 3 more girls arriving'
-for girl in girls[2:]:
-    girl.start()
+fifo = FIFO()
+
+fs = [f_gen(i) for i in range(5)]
+ts = [Thread(target=f) for f in fs]
+for t in ts:
+    t.start()
+for _ in range(5):
+    time.sleep(0.1)
+    fifo.signal()
