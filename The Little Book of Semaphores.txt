@@ -277,3 +277,6 @@ producer 的 items.release 放在 lock.release 之后，可以避免对 consumer
 2015-04-26 22:26:13
 记得reader/writer的同步没这么麻烦呃，还是自己记错了？反正这次写的挺麻烦
 靠event while来弄的
+
+2015-04-26 23:06:11
+呃，lightswitch pattern，，自己是没想到

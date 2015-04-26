@@ -10,48 +10,42 @@ def put(o):
     global q
     q.put(o)
 
-writing = False
-writing_lock = Semaphore(1)
-operatings = 0
-operatings_lock = Semaphore(1)
-operating_finished = Semaphore(0)
+class Lightswitch(object):
+
+    def __init__(self):
+        self.__n = 0
+        self.__lock = Semaphore(1)
+
+    def lock(self, semaphore):
+        self.__lock.acquire()
+        self.__n += 1
+        if self.__n == 1:
+            semaphore.acquire()
+        self.__lock.release()
+
+    def unlock(self, semaphore):
+        self.__lock.acquire()
+        self.__n -= 1
+        if self.__n == 0:
+            semaphore.release()
+        self.__lock.release()
+
+empty = Semaphore(1)
+light = Lightswitch()
 
 def writer():
-    operatings_lock.acquire()
-    while operatings:
-        operatings_lock.release()
-        operating_finished.acquire()
-        operatings_lock.acquire()
-    writing_lock.acquire()
-    writing = True
-    writing_lock.release()
-    put('WBeg')
-    operatings_lock.release()
+    empty.acquire()
     put('write')
-    put('WEnd')
-    writing_lock.acquire()
-    writing = False
-    writing_lock.release()
-    operating_finished.release()
+    empty.release()
 
 def reader():
-    global operatings
-    operatings_lock.acquire()
-    while writing:
-        operatings_lock.release()
-        operating_finished.acquire()
-        operatings_lock.acquire()
-    operatings += 1
-    operatings_lock.release()
-    put('{} beg'.format(threading.current_thread().ident))
-    put('{} read'.format(threading.current_thread().ident))
-    put('{} leave'.format(threading.current_thread().ident))
-    operatings_lock.acquire()
-    operatings -= 1
-    operatings_lock.release()
-    operating_finished.release()
+    light.lock(empty)
+    put('read')
+    light.unlock(empty)
 
-ts = [Thread(target=reader) for _ in range(5)] + [Thread(target=writer) for _ in range(3)]
+rs = [Thread(target=reader) for _ in range(5)]
+ws = [Thread(target=writer) for _ in range(3)]
+ts = rs + ws
 random.shuffle(ts)
 for t in ts:
     t.start()
