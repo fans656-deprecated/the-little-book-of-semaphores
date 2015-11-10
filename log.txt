@@ -280,3 +280,7 @@ producer 的 items.release 放在 lock.release 之后，可以避免对 consumer
 
 2015-04-26 23:06:11
 呃，lightswitch pattern，，自己是没想到
+
+2015-11-10 17:55:15
+写了一个线程运行模拟的小lib，可以得到所有可能的执行序列
+然后慢慢分析哪些情况下运行与预期不符
